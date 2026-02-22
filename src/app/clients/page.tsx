@@ -16,13 +16,20 @@ export default function ClientsPage() {
 
   const loadClients = async () => {
     const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) return;
+    if (!userData.user) {
+      setLoading(false);
+      return;
+    }
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("clients")
       .select("*")
       .eq("profile_id", userData.user.id)
       .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error(error);
+    }
 
     setClients(data || []);
     setLoading(false);
@@ -32,13 +39,19 @@ export default function ClientsPage() {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) return;
 
-    await supabase.from("clients").insert([
+    const { error } = await supabase.from("clients").insert([
       {
         name,
         phone,
         profile_id: userData.user.id,
       },
     ]);
+
+    if (error) {
+      console.error(error);
+      alert(error.message);
+      return;
+    }
 
     setName("");
     setPhone("");
@@ -86,7 +99,8 @@ export default function ClientsPage() {
         {clients.map((client) => (
           <Link
             key={client.id}
-            href={`/clients/${client.id}`}            className="bg-white p-6 rounded-xl shadow-sm border block hover:shadow-md transition"
+            href={`/clients/${client.id}`}
+            className="bg-white p-6 rounded-xl shadow-sm border block hover:shadow-md transition"
           >
             <h4 className="font-bold text-lg">{client.name}</h4>
             <p className="text-gray-500 mt-2">{client.phone}</p>

@@ -5,7 +5,9 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 export default function ClientDetailsPage() {
-  const { id } = useParams();
+  const params = useParams();
+  const id = Array.isArray(params.id) ? params.id[0] : params.id;
+
   const [client, setClient] = useState<any>(null);
   const [products, setProducts] = useState<any[]>([]);
   const [productName, setProductName] = useState("");
@@ -13,53 +15,74 @@ export default function ClientDetailsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadClient();
-    loadProducts();
-  }, []);
+    if (!id) return;
 
-  const loadClient = async () => {
-    const { data } = await supabase
-      .from("clients")
-      .select("*")
-      .eq("id", id)
-      .single();
+    const fetchData = async () => {
+  setLoading(true);
 
-    setClient(data);
-  };
-
-  const loadProducts = async () => {
-    const { data } = await supabase
-      .from("recurring_products")
-      .select("*")
-      .eq("client_id", id)
-      .order("created_at", { ascending: false });
-
-    setProducts(data || []);
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) {
     setLoading(false);
-  };
-
-  const createProduct = async () => {
-    await supabase.from("recurring_products").insert([
-      {
-        client_id: id,
-        name: productName,
-        duration_days: duration,
-      },
-    ]);
-
-    setProductName("");
-    setDuration(30);
-    loadProducts();
-  };
-
-  if (loading) {
-    return <div>Carregando...</div>;
+    return;
   }
 
+  const { data: clientData } = await supabase
+    .from("clients")
+    .select("*")
+    .eq("id", id)
+    .eq("profile_id", userData.user.id) // 🔥 IMPORTANTE
+    .single();
+
+  const { data: productsData } = await supabase
+    .from("recurring_products")
+    .select("*")
+    .eq("client_id", id)
+    .order("created_at", { ascending: false });
+
+  setClient(clientData);
+  setProducts(productsData || []);
+  setLoading(false);
+};
+
+    fetchData();
+  }, [id]);
+
+  const createProduct = async () => {
+  if (!productName) return;
+
+  const nextReminder = new Date();
+  nextReminder.setDate(nextReminder.getDate() + duration);
+
+  await supabase.from("recurring_products").insert([
+    {
+      client_id: id,
+      name: productName,
+      duration_days: duration,
+      next_reminder_date: nextReminder.toISOString(),
+    },
+  ]);
+
+  setProductName("");
+  setDuration(30);
+
+  // 🔥 Recarrega os produtos manualmente
+  const { data } = await supabase
+    .from("recurring_products")
+    .select("*")
+    .eq("client_id", id)
+    .order("created_at", { ascending: false });
+
+  setProducts(data || []);
+};
+
+if (!client) {
+  return <div className="p-10">Cliente não encontrado.</div>;
+}
+
   return (
-    <div>
-      <h2 className="text-3xl font-bold mb-2">{client?.name}</h2>
-      <p className="text-gray-500 mb-8">{client?.phone}</p>
+    <div className="p-10">
+      <h2 className="text-3xl font-bold mb-2">{client.name}</h2>
+      <p className="text-gray-500 mb-8">{client.phone}</p>
 
       <div className="bg-white p-6 rounded-xl shadow-sm border mb-8">
         <h3 className="font-semibold mb-4">Novo Produto Recorrente</h3>
@@ -98,7 +121,7 @@ export default function ClientDetailsPage() {
           >
             <h4 className="font-bold text-lg">{product.name}</h4>
             <p className="text-gray-500 mt-2">
-              Próximo lembrete: {product.next_reminder_date}
+              Próximo lembrete: {product.next_reminder_date || "—"}
             </p>
           </div>
         ))}
